@@ -19,8 +19,8 @@ bits = np.random.randint(0, 2, num_bits)
 print(f"Generated {num_bits} random bits for all modulation schemes")
 print(f"First 20 bits: {bits[:20]}")
 
-# Common Eb/N0 range (0-15 dB)
-EbN0_dB_range = np.arange(0, 16, 1)  # 0 to 15 dB
+# Common Eb/N0 range (0-20 dB)
+EbN0_dB_range = np.arange(0, 21, 1)  # 0 to 20 dB
 print(f"Eb/N0 range: {EbN0_dB_range[0]} to {EbN0_dB_range[-1]} dB")
 
 # ================== BASK - BINARY AMPLITUDE SHIFT KEYING ==================
