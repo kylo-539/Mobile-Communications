@@ -185,7 +185,7 @@ for snr_db in snr:
     num_bit_errors = np.sum(bits != demod_bits)
     ber = num_bit_errors / num_bits
     BER_ofdm[snr_db] = ber  # Store instead of just printing
-    print(f"Bit Error Rate (BER): {ber}")
+    print(f"Bit Error Rate (BER): {ber} for SNR = {snr_db} dB")
 
     # After demodulation, store for plotting at specific SNR
     if snr_db == 10:
