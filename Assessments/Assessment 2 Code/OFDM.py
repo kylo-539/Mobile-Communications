@@ -7,16 +7,16 @@ import matplotlib.pyplot as plt
 print("OFDM System Parameters")
 print("=" * 60)
 
-# Frequency domain parameters
+# Frequency domain parameters (all given in brief)
 bandwidth = 10000000          # 10 MHz - Total allocated bandwidth
 FFT_Size = 512                # 512-point FFT
-active_subcarriers = 480      # 480 active subcarriers (480/512 = 93.75% utilization)
+active_subcarriers = 480      # 480 active subcarriers (480/512 = 93.75% utilisation)
 subcarrier_spacing = 15000    # 15 kHz - Spacing between subcarriers
 sampling_rate = 7680000       # 7.68 MHz - Sampling frequency
 
 # Time domain parameters (derived from frequency parameters)
 T_useful = 1 / subcarrier_spacing                    # Useful OFDM symbol duration (no CP)
-cp_length = 0.125                                     # Cyclic prefix ratio (1/8)
+cp_length = 0.125                                    # Cyclic prefix ratio (1/8)
 T_CP = T_useful * cp_length                          # CP duration
 T_symbol = T_useful + T_CP                           # Total OFDM symbol duration (with CP)
 cp_length_samples = int(cp_length * FFT_Size)        # CP length in samples
@@ -81,7 +81,7 @@ receive signal -> serial to parallel -> remove CP -> FFT -> parallel to serial -
 
 """
 
-# Generate random bits
+# ================== STAGE 1: Generate Random Bits ==================
 num_bits = 100000
 bits = np.random.randint(0, 2, num_bits)
 
@@ -90,6 +90,18 @@ if num_bits % 2 != 0:
     bits = bits[:-1]
     num_bits = len(bits)
 
+# ================== PLOT 1: Original Bit Sequence ==================
+plt.figure(figsize=(12, 3))
+plt.stem(bits[:100], linefmt='b-', markerfmt='bo', basefmt=' ')
+plt.xlabel('Bit Index')
+plt.ylabel('Bit Value')
+plt.title('Stage 1: Original Bit Sequence (First 100 bits)')
+plt.grid(True, alpha=0.3)
+plt.ylim([-0.2, 1.2])
+plt.tight_layout()
+plt.show()
+
+# ================== STAGE 2: QPSK Modulation ==================
 # Map bits to QPSK symbols
 symbols = bits[::2] * 2 + bits[1::2]  # Group bits into pairs for QPSK
 num_symbols = len(symbols)
@@ -121,6 +133,25 @@ constellation_I = {k: A * np.cos(phase) for k, phase in constellation_phases.ite
 constellation_Q = {k: A * np.sin(phase) for k, phase in constellation_phases.items()}  # Quadrature components
 qpsk_modulated = np.array([constellation_I[s] + 1j * constellation_Q[s] for s in symbols])
 
+# ================== PLOT 2: QPSK Constellation ==================
+plt.figure(figsize=(8, 8))
+plt.scatter(qpsk_modulated[:1000].real, qpsk_modulated[:1000].imag, alpha=0.5, s=20)
+for s, phase in constellation_phases.items():
+    I = constellation_I[s]
+    Q = constellation_Q[s]
+    plt.plot(I, Q, 'rx', markersize=15, markeredgewidth=3)
+    plt.annotate(f'{s:02b}', (I, Q), xytext=(10, 10), textcoords='offset points', fontsize=12, color='red')
+plt.xlabel('In-Phase (I)')
+plt.ylabel('Quadrature (Q)')
+plt.title('Stage 2: QPSK Constellation Mapping\n(First 1000 symbols)')
+plt.grid(True, alpha=0.3)
+plt.axis('equal')
+plt.axhline(y=0, color='k', linewidth=0.5)
+plt.axvline(x=0, color='k', linewidth=0.5)
+plt.tight_layout()
+plt.show()
+
+# ================== STAGE 3: Serial to Parallel & Subcarrier Mapping ==================
 # Serial to Parallel (now guaranteed to work since we padded)
 ofdm_symbols = qpsk_modulated.reshape(-1, active_subcarriers)  # Shape: (num_ofdm_symbols, 480)
 
@@ -130,12 +161,78 @@ start = (FFT_Size - active_subcarriers)//2
 end = start + active_subcarriers
 fft_input[:, start:end] = ofdm_symbols  # Map active subcarriers to center of FFT bins
 
+# ================== PLOT 3: Frequency Domain Subcarrier Allocation ==================
+plt.figure(figsize=(14, 5))
+plt.subplot(2, 1, 1)
+plt.stem(np.abs(fft_input[0, :]), linefmt='b-', markerfmt='bo', basefmt=' ')
+plt.xlabel('Subcarrier Index')
+plt.ylabel('Magnitude')
+plt.title('Stage 3: Frequency Domain - Subcarrier Allocation (First OFDM Symbol)')
+plt.grid(True, alpha=0.3)
+plt.axvspan(0, start, alpha=0.2, color='red', label='Guard/Null carriers')
+plt.axvspan(end, FFT_Size, alpha=0.2, color='red')
+plt.axvspan(start, end, alpha=0.2, color='green', label='Active carriers')
+plt.legend()
+
+plt.subplot(2, 1, 2)
+plt.stem(np.angle(fft_input[0, :]), linefmt='g-', markerfmt='go', basefmt=' ')
+plt.xlabel('Subcarrier Index')
+plt.ylabel('Phase (radians)')
+plt.title('Phase of Subcarriers')
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# ================== STAGE 4: IFFT & Cyclic Prefix Addition ==================
 # IFFT to get time-domain OFDM symbols
 ofdm_time_domain = np.fft.ifft(fft_input, n=FFT_Size, axis=1)  # 512 FFT 
+
+# ================== PLOT 4: Time Domain OFDM Signal (Before CP) ==================
+plt.figure(figsize=(14, 6))
+plt.subplot(2, 1, 1)
+plt.plot(np.real(ofdm_time_domain[0, :]), 'b-', label='Real (I)')
+plt.plot(np.imag(ofdm_time_domain[0, :]), 'r-', label='Imaginary (Q)')
+plt.xlabel('Sample Index')
+plt.ylabel('Amplitude')
+plt.title('Stage 4a: Time Domain OFDM Signal - After IFFT (First Symbol, No CP)')
+plt.grid(True, alpha=0.3)
+plt.legend()
+
+plt.subplot(2, 1, 2)
+plt.plot(np.abs(ofdm_time_domain[0, :]), 'g-')
+plt.xlabel('Sample Index')
+plt.ylabel('Magnitude')
+plt.title('Magnitude of Time Domain Signal')
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
 
 # Add Cyclic Prefix (using pre-calculated cp_length_samples from parameters)
 ofdm_with_cp = np.hstack((ofdm_time_domain[:, -cp_length_samples:], ofdm_time_domain))
 
+# ================== PLOT 5: Time Domain OFDM Signal (With CP) ==================
+plt.figure(figsize=(14, 6))
+plt.subplot(2, 1, 1)
+plt.plot(np.real(ofdm_with_cp[0, :]), 'b-', label='Real (I)')
+plt.plot(np.imag(ofdm_with_cp[0, :]), 'r-', label='Imaginary (Q)')
+plt.axvspan(0, cp_length_samples, alpha=0.3, color='yellow', label='Cyclic Prefix')
+plt.xlabel('Sample Index')
+plt.ylabel('Amplitude')
+plt.title(f'Stage 4b: Time Domain OFDM Signal - With Cyclic Prefix (First Symbol, CP={cp_length_samples} samples)')
+plt.grid(True, alpha=0.3)
+plt.legend()
+
+plt.subplot(2, 1, 2)
+plt.plot(np.abs(ofdm_with_cp[0, :]), 'g-')
+plt.axvspan(0, cp_length_samples, alpha=0.3, color='yellow')
+plt.xlabel('Sample Index')
+plt.ylabel('Magnitude')
+plt.title('Magnitude of Time Domain Signal with CP')
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# ================== STAGE 5: Transmission through AWGN Channel ==================
 BER_ofdm = np.zeros(len(snr))  # Store BER for each SNR value
 
 for snr_db in snr:
@@ -153,6 +250,7 @@ for snr_db in snr:
 
     received_signal = ofdm_with_cp + noise # Received signal with noise
 
+    # ================== STAGE 6: Receiver Processing ==================
     # Remove CP
     received_signal_no_cp = received_signal[:, cp_length_samples:]
 
@@ -162,8 +260,8 @@ for snr_db in snr:
     # Extract active subcarriers
     received_active_subcarriers = received_ofdm_symbols[:, start:end].flatten()
 
+    # ================== STAGE 7: Demodulation & BER Calculation ==================
     # Demodulation (Symbol slicing)
-
     demod_symbols = []
     for rx_symbol in received_active_subcarriers:
         distances = [abs(rx_symbol - (constellation_I[s] + 1j * constellation_Q[s])) for s in range(4)]
@@ -181,6 +279,7 @@ for snr_db in snr:
 
     demod_bits = np.array([b for s in demod_symbols for b in bit_pairs[s]])
     demod_bits = demod_bits[:num_bits]  # Trim to original number of bits
+    
     # Calculate Bit Error Rate (BER)
     num_bit_errors = np.sum(bits != demod_bits)
     ber = num_bit_errors / num_bits
@@ -191,25 +290,92 @@ for snr_db in snr:
     if snr_db == 10:
         tx_constellation = qpsk_modulated[:1000]
         rx_constellation = received_active_subcarriers[:1000]
+        
+        # ================== PLOT 6: Received Signal in Frequency Domain ==================
+        plt.figure(figsize=(14, 5))
+        plt.subplot(2, 1, 1)
+        plt.stem(np.abs(received_ofdm_symbols[0, :]), linefmt='b-', markerfmt='bo', basefmt=' ')
+        plt.xlabel('Subcarrier Index')
+        plt.ylabel('Magnitude')
+        plt.title(f'Stage 5: Received Signal in Frequency Domain (After FFT, SNR={snr_db} dB)')
+        plt.grid(True, alpha=0.3)
+        plt.axvspan(0, start, alpha=0.2, color='red', label='Guard/Null carriers')
+        plt.axvspan(end, FFT_Size, alpha=0.2, color='red')
+        plt.axvspan(start, end, alpha=0.2, color='green', label='Active carriers')
+        plt.legend()
+        
+        plt.subplot(2, 1, 2)
+        plt.stem(np.angle(received_ofdm_symbols[0, :]), linefmt='g-', markerfmt='go', basefmt=' ')
+        plt.xlabel('Subcarrier Index')
+        plt.ylabel('Phase (radians)')
+        plt.title('Phase of Received Subcarriers')
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.show()
+        
+        # ================== PLOT 7: Constellation Comparison ==================
+        plt.figure(figsize=(14, 6))
+        
+        plt.subplot(1, 2, 1)
+        plt.scatter(tx_constellation.real, tx_constellation.imag, alpha=0.5, s=20, label='Transmitted')
+        for s, phase in constellation_phases.items():
+            I = constellation_I[s]
+            Q = constellation_Q[s]
+            plt.plot(I, Q, 'rx', markersize=15, markeredgewidth=3)
+            plt.annotate(f'{s:02b}', (I, Q), xytext=(10, 10), textcoords='offset points', fontsize=12, color='red')
+        plt.xlabel('In-Phase (I)')
+        plt.ylabel('Quadrature (Q)')
+        plt.title('Transmitted Constellation')
+        plt.grid(True, alpha=0.3)
+        plt.axis('equal')
+        plt.axhline(y=0, color='k', linewidth=0.5)
+        plt.axvline(x=0, color='k', linewidth=0.5)
+        plt.legend()
+        
+        plt.subplot(1, 2, 2)
+        plt.scatter(rx_constellation.real, rx_constellation.imag, alpha=0.5, s=20, label=f'Received (SNR={snr_db} dB)')
+        for s, phase in constellation_phases.items():
+            I = constellation_I[s]
+            Q = constellation_Q[s]
+            plt.plot(I, Q, 'rx', markersize=15, markeredgewidth=3)
+            plt.annotate(f'{s:02b}', (I, Q), xytext=(10, 10), textcoords='offset points', fontsize=12, color='red')
+        plt.xlabel('In-Phase (I)')
+        plt.ylabel('Quadrature (Q)')
+        plt.title(f'Received Constellation (SNR={snr_db} dB)')
+        plt.grid(True, alpha=0.3)
+        plt.axis('equal')
+        plt.axhline(y=0, color='k', linewidth=0.5)
+        plt.axvline(x=0, color='k', linewidth=0.5)
+        plt.legend()
+        
+        plt.suptitle('Stage 6: Constellation Comparison - Transmitted vs Received', fontsize=14, y=1.02)
+        plt.tight_layout()
+        plt.show()
 
 
-plt.figure(1)
-plt.plot(snr, BER_ofdm, 'o-', label='Simulated BER')
+# ================== PLOT 8: BER Performance (Simulated Only) ==================
+plt.figure(figsize=(10, 6))
+plt.plot(snr, BER_ofdm, 'o-', linewidth=2, markersize=8, label='Simulated BER')
 plt.yscale('log')
-plt.xlabel('SNR (dB)')
-plt.ylabel('Bit Error Rate (BER)')
-plt.title('OFDM QPSK BER vs SNR')
-plt.grid(True)
-plt.legend()
+plt.xlabel('SNR (dB)', fontsize=12)
+plt.ylabel('Bit Error Rate (BER)', fontsize=12)
+plt.title('Stage 7: OFDM QPSK BER vs SNR Performance', fontsize=14)
+plt.grid(True, alpha=0.3, which='both')
+plt.legend(fontsize=11)
+plt.tight_layout()
 plt.show()
 
-plt.figure(2)
-plt.plot(snr, BER_ofdm, 'o-', label='Simulated BER')
-plt.plot(snr, 0.5 * erfc(np.sqrt(10**(np.array(snr)/10))), 'r--', label='Theoretical BER')
+# ================== PLOT 9: BER Performance with Theoretical Comparison ==================
+plt.figure(figsize=(10, 6))
+plt.plot(snr, BER_ofdm, 'o-', linewidth=2, markersize=8, label='Simulated BER')
+# Theoretical BER for QPSK in AWGN
+# Pb = Q * sqrt(2*Eb/N0) = 0.5 * erfc(sqrt(Eb/N0))
+plt.plot(snr, 0.5 * erfc(np.sqrt(10**(np.array(snr)/10))), 'r--', linewidth=2, label='Theoretical BER (QPSK AWGN)')
 plt.yscale('log')
-plt.xlabel('SNR (dB)')
-plt.ylabel('Bit Error Rate (BER)')
-plt.title('OFDM QPSK BER vs SNR')
-plt.grid(True)
-plt.legend()
+plt.xlabel('SNR (dB)', fontsize=12)
+plt.ylabel('Bit Error Rate (BER)', fontsize=12)
+plt.title('Stage 7: OFDM QPSK BER Performance - Simulated vs Theoretical', fontsize=14)
+plt.grid(True, alpha=0.3, which='both')
+plt.legend(fontsize=11)
+plt.tight_layout()
 plt.show()
