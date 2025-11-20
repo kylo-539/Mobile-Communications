@@ -99,6 +99,7 @@ plt.title('Stage 1: Original Bit Sequence (First 100 bits)')
 plt.grid(True, alpha=0.3)
 plt.ylim([-0.2, 1.2])
 plt.tight_layout()
+plt.savefig("Step-1-Original-Sequence.png")
 plt.show()
 
 # ================== STAGE 2: QPSK Modulation ==================
@@ -134,32 +135,80 @@ constellation_Q = {k: A * np.sin(phase) for k, phase in constellation_phases.ite
 qpsk_modulated = np.array([constellation_I[s] + 1j * constellation_Q[s] for s in symbols])
 
 # ================== PLOT 2: QPSK Constellation ==================
+# Colors and markers for different symbols
+symbol_colors = ['blue', 'red', 'green', 'orange']
+symbol_labels = ['00', '01', '10', '11']
+symbol_markers = ['o', 's', '^', 'D']
+
 plt.figure(figsize=(8, 8))
-plt.scatter(qpsk_modulated[:1000].real, qpsk_modulated[:1000].imag, alpha=0.5, s=20)
+# Plot transmitted symbols with different colors for each symbol type
+for sym in range(4):
+    sym_indices = np.where(symbols[:1000] == sym)[0]
+    sym_I = [qpsk_modulated[i].real for i in sym_indices]
+    sym_Q = [qpsk_modulated[i].imag for i in sym_indices]
+    plt.scatter(sym_I, sym_Q, c=symbol_colors[sym], alpha=0.6, s=20, 
+               marker=symbol_markers[sym], label=f'{symbol_labels[sym]}', 
+               edgecolors='white', linewidth=0.5)
+
+# Plot ideal constellation points
 for s, phase in constellation_phases.items():
     I = constellation_I[s]
     Q = constellation_Q[s]
-    plt.plot(I, Q, 'rx', markersize=15, markeredgewidth=3)
-    plt.annotate(f'{s:02b}', (I, Q), xytext=(10, 10), textcoords='offset points', fontsize=12, color='red')
-plt.xlabel('In-Phase (I)')
-plt.ylabel('Quadrature (Q)')
-plt.title('Stage 2: QPSK Constellation Mapping\n(First 1000 symbols)')
+    plt.scatter(I, Q, c=symbol_colors[s], s=200, marker=symbol_markers[s], 
+               edgecolors='black', linewidth=2, zorder=5)
+    plt.annotate(f'{symbol_labels[s]}', (I, Q), xytext=(10, 10), 
+                textcoords='offset points', fontsize=12, fontweight='bold',
+                color='black', bbox=dict(boxstyle='round,pad=0.3', 
+                facecolor='yellow', alpha=0.7))
+
+plt.xlabel('In-Phase (I)', fontsize=12, fontweight='bold')
+plt.ylabel('Quadrature (Q)', fontsize=12, fontweight='bold')
+plt.title('Stage 2: QPSK Constellation Mapping\n(First 1000 symbols)', fontsize=14, fontweight='bold')
 plt.grid(True, alpha=0.3)
 plt.axis('equal')
+plt.xlim(-6, 6)
+plt.ylim(-6, 6)
 plt.axhline(y=0, color='k', linewidth=0.5)
 plt.axvline(x=0, color='k', linewidth=0.5)
+plt.legend(loc='upper right', framealpha=0.9, fontsize=10)
 plt.tight_layout()
+plt.savefig("Step-2-QPSK-Mapping.png")
 plt.show()
 
 # ================== STAGE 3: Serial to Parallel & Subcarrier Mapping ==================
 # Serial to Parallel (now guaranteed to work since we padded)
 ofdm_symbols = qpsk_modulated.reshape(-1, active_subcarriers)  # Shape: (num_ofdm_symbols, 480)
 
-# Map to FFT bins
+# Map to FFT bins with DC null and guard bands
+# Standard OFDM subcarrier allocation:
+# - Lower guard band: indices 0 to 15 (16 carriers)
+# - Lower active: indices 16 to 255 (240 carriers)
+# - DC null: index 256 (1 carrier - center frequency)
+# - Upper active: indices 257 to 496 (240 carriers)
+# - Upper guard band: indices 497 to 511 (15 carriers)
 fft_input = np.zeros((ofdm_symbols.shape[0], FFT_Size), dtype=complex) # Initialize with zeros
-start = (FFT_Size - active_subcarriers)//2
-end = start + active_subcarriers
-fft_input[:, start:end] = ofdm_symbols  # Map active subcarriers to center of FFT bins
+
+# Split active subcarriers into lower and upper halves (240 each)
+lower_half = active_subcarriers // 2  # 240
+upper_half = active_subcarriers - lower_half  # 240
+
+# Map lower half (before DC)
+lower_start = 16  # After lower guard band
+lower_end = lower_start + lower_half  # 16 + 240 = 256
+fft_input[:, lower_start:lower_end] = ofdm_symbols[:, :lower_half]
+
+# Index 256 remains null (DC subcarrier)
+
+# Map upper half (after DC)
+upper_start = 257  # After DC null
+upper_end = upper_start + upper_half  # 257 + 240 = 497
+fft_input[:, upper_start:upper_end] = ofdm_symbols[:, lower_half:]
+
+# For receiver (define indices for extraction)
+start_lower = lower_start
+end_lower = lower_end
+start_upper = upper_start
+end_upper = upper_end
 
 # ================== PLOT 3: Frequency Domain Subcarrier Allocation ==================
 plt.figure(figsize=(14, 5))
@@ -169,9 +218,16 @@ plt.xlabel('Subcarrier Index')
 plt.ylabel('Magnitude')
 plt.title('Stage 3: Frequency Domain - Subcarrier Allocation (First OFDM Symbol)')
 plt.grid(True, alpha=0.3)
-plt.axvspan(0, start, alpha=0.2, color='red', label='Guard/Null carriers')
-plt.axvspan(end, FFT_Size, alpha=0.2, color='red')
-plt.axvspan(start, end, alpha=0.2, color='green', label='Active carriers')
+# Lower guard band
+plt.axvspan(0, lower_start, alpha=0.2, color='red', label='Guard bands')
+# Upper guard band
+plt.axvspan(end_upper, FFT_Size, alpha=0.2, color='red')
+# Lower active carriers
+plt.axvspan(lower_start, end_lower, alpha=0.2, color='green', label='Active carriers')
+# DC null
+plt.axvline(x=256, color='orange', linewidth=2, linestyle='--', label='DC null')
+# Upper active carriers
+plt.axvspan(start_upper, end_upper, alpha=0.2, color='green')
 plt.legend()
 
 plt.subplot(2, 1, 2)
@@ -180,7 +236,19 @@ plt.xlabel('Subcarrier Index')
 plt.ylabel('Phase (radians)')
 plt.title('Phase of Subcarriers')
 plt.grid(True, alpha=0.3)
+# Lower guard band
+plt.axvspan(0, lower_start, alpha=0.2, color='red')
+# Upper guard band
+plt.axvspan(end_upper, FFT_Size, alpha=0.2, color='red')
+# Lower active carriers
+plt.axvspan(lower_start, end_lower, alpha=0.2, color='green')
+# DC null
+plt.axvline(x=256, color='orange', linewidth=2, linestyle='--', label='DC null')
+# Upper active carriers
+plt.axvspan(start_upper, end_upper, alpha=0.2, color='green')
+plt.legend()
 plt.tight_layout()
+plt.savefig("Step-3-Frequency-Domain-Subcarrier-Allocation.png")
 plt.show()
 
 # ================== STAGE 4: IFFT & Cyclic Prefix Addition ==================
@@ -198,6 +266,7 @@ plt.title('Stage 4a: Time Domain OFDM Signal - After IFFT (First Symbol, No CP)'
 plt.grid(True, alpha=0.3)
 plt.legend()
 
+
 plt.subplot(2, 1, 2)
 plt.plot(np.abs(ofdm_time_domain[0, :]), 'g-')
 plt.xlabel('Sample Index')
@@ -205,6 +274,7 @@ plt.ylabel('Magnitude')
 plt.title('Magnitude of Time Domain Signal')
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
+plt.savefig("Step-4a-Time-Domain-OFDM-Signal-After-IFFT.png")
 plt.show()
 
 # Add Cyclic Prefix (using pre-calculated cp_length_samples from parameters)
@@ -230,6 +300,7 @@ plt.ylabel('Magnitude')
 plt.title('Magnitude of Time Domain Signal with CP')
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
+plt.savefig("Step-4b-Time-Domain-OFDM-Signal-After-IFFT-With-64-CP-Samples.png")
 plt.show()
 
 # ================== STAGE 5: Transmission through AWGN Channel ==================
@@ -257,8 +328,10 @@ for snr_db in snr:
     # FFT to convert back to frequency domain (No need for correlation)
     received_ofdm_symbols = np.fft.fft(received_signal_no_cp, n=FFT_Size, axis=1)
 
-    # Extract active subcarriers
-    received_active_subcarriers = received_ofdm_symbols[:, start:end].flatten()
+    # Extract active subcarriers (lower and upper halves, excluding DC null)
+    received_lower = received_ofdm_symbols[:, start_lower:end_lower]  # Lower 240 carriers
+    received_upper = received_ofdm_symbols[:, start_upper:end_upper]  # Upper 240 carriers
+    received_active_subcarriers = np.hstack((received_lower, received_upper)).flatten()  # Combine and flatten
 
     # ================== STAGE 7: Demodulation & BER Calculation ==================
     # Demodulation (Symbol slicing)
@@ -299,10 +372,17 @@ for snr_db in snr:
         plt.ylabel('Magnitude')
         plt.title(f'Stage 5: Received Signal in Frequency Domain (After FFT, SNR={snr_db} dB)')
         plt.grid(True, alpha=0.3)
-        plt.axvspan(0, start, alpha=0.2, color='red', label='Guard/Null carriers')
-        plt.axvspan(end, FFT_Size, alpha=0.2, color='red')
-        plt.axvspan(start, end, alpha=0.2, color='green', label='Active carriers')
-        plt.legend()
+        # Lower guard band
+        plt.axvspan(0, lower_start, alpha=0.2, color='red', label='Guard bands')
+        # Upper guard band
+        plt.axvspan(end_upper, FFT_Size, alpha=0.2, color='red')
+        # Lower active carriers
+        plt.axvspan(lower_start, end_lower, alpha=0.2, color='green', label='Active carriers')
+        # DC null
+        plt.axvline(x=256, color='orange', linewidth=2, linestyle='--', label='DC null')
+        # Upper active carriers
+        plt.axvspan(start_upper, end_upper, alpha=0.2, color='green')
+        plt.legend(loc='upper left')
         
         plt.subplot(2, 1, 2)
         plt.stem(np.angle(received_ofdm_symbols[0, :]), linefmt='g-', markerfmt='go', basefmt=' ')
@@ -310,46 +390,85 @@ for snr_db in snr:
         plt.ylabel('Phase (radians)')
         plt.title('Phase of Received Subcarriers')
         plt.grid(True, alpha=0.3)
+        # Lower guard band
+        plt.axvspan(0, lower_start, alpha=0.2, color='red')
+        # Upper guard band
+        plt.axvspan(end_upper, FFT_Size, alpha=0.2, color='red')
+        # Lower active carriers
+        plt.axvspan(lower_start, end_lower, alpha=0.2, color='green')
+        # DC null
+        plt.axvline(x=256, color='orange', linewidth=2, linestyle='--', label='DC null')
+        # Upper active carriers
+        plt.axvspan(start_upper, end_upper, alpha=0.2, color='green')
+        plt.legend(loc='upper left')
         plt.tight_layout()
+        plt.savefig("Step-5-Frequency-Domain-Received-Signal.png")
         plt.show()
         
         # ================== PLOT 7: Constellation Comparison ==================
         plt.figure(figsize=(14, 6))
         
+        # Transmitted constellation
         plt.subplot(1, 2, 1)
-        plt.scatter(tx_constellation.real, tx_constellation.imag, alpha=0.5, s=20, label='Transmitted')
+        for sym in range(4):
+            sym_indices = np.where(symbols[:1000] == sym)[0]
+            sym_I = [tx_constellation[i].real for i in sym_indices if i < len(tx_constellation)]
+            sym_Q = [tx_constellation[i].imag for i in sym_indices if i < len(tx_constellation)]
+            plt.scatter(sym_I, sym_Q, c=symbol_colors[sym], alpha=0.6, s=20, 
+                       marker=symbol_markers[sym], label=f'{symbol_labels[sym]}', 
+                       edgecolors='white', linewidth=0.5)
+        
+        # Plot ideal constellation points
         for s, phase in constellation_phases.items():
             I = constellation_I[s]
             Q = constellation_Q[s]
-            plt.plot(I, Q, 'rx', markersize=15, markeredgewidth=3)
-            plt.annotate(f'{s:02b}', (I, Q), xytext=(10, 10), textcoords='offset points', fontsize=12, color='red')
-        plt.xlabel('In-Phase (I)')
-        plt.ylabel('Quadrature (Q)')
-        plt.title('Transmitted Constellation')
+            plt.scatter(I, Q, c=symbol_colors[s], s=200, marker=symbol_markers[s], 
+                       edgecolors='black', linewidth=2, zorder=5)
+        
+        plt.xlabel('In-Phase (I)', fontsize=12, fontweight='bold')
+        plt.ylabel('Quadrature (Q)', fontsize=12, fontweight='bold')
+        plt.title('Transmitted Constellation', fontsize=14, fontweight='bold')
         plt.grid(True, alpha=0.3)
         plt.axis('equal')
         plt.axhline(y=0, color='k', linewidth=0.5)
         plt.axvline(x=0, color='k', linewidth=0.5)
-        plt.legend()
+        plt.legend(loc='upper right', framealpha=0.9, fontsize=10)
         
+        # Received constellation with decision regions
         plt.subplot(1, 2, 2)
-        plt.scatter(rx_constellation.real, rx_constellation.imag, alpha=0.5, s=20, label=f'Received (SNR={snr_db} dB)')
+        
+        # Add colored decision regions (quadrants)
+        plt.fill([0, 10, 10, 0], [0, 0, 10, 10], alpha=0.1, color=symbol_colors[0])  # Quadrant I (00)
+        plt.fill([-10, 0, 0, -10], [0, 0, 10, 10], alpha=0.1, color=symbol_colors[1])  # Quadrant II (01)
+        plt.fill([-10, 0, 0, -10], [-10, -10, 0, 0], alpha=0.1, color=symbol_colors[3])  # Quadrant III (11)
+        plt.fill([0, 10, 10, 0], [-10, -10, 0, 0], alpha=0.1, color=symbol_colors[2])  # Quadrant IV (10)
+        
+        for sym in range(4):
+            sym_indices = np.where(symbols[:1000] == sym)[0]
+            sym_I = [rx_constellation[i].real for i in sym_indices if i < len(rx_constellation)]
+            sym_Q = [rx_constellation[i].imag for i in sym_indices if i < len(rx_constellation)]
+            plt.scatter(sym_I, sym_Q, c=symbol_colors[sym], alpha=0.4, s=15, 
+                       marker=symbol_markers[sym], label=f'{symbol_labels[sym]}')
+        
+        # Plot ideal constellation points
         for s, phase in constellation_phases.items():
             I = constellation_I[s]
             Q = constellation_Q[s]
-            plt.plot(I, Q, 'rx', markersize=15, markeredgewidth=3)
-            plt.annotate(f'{s:02b}', (I, Q), xytext=(10, 10), textcoords='offset points', fontsize=12, color='red')
-        plt.xlabel('In-Phase (I)')
-        plt.ylabel('Quadrature (Q)')
-        plt.title(f'Received Constellation (SNR={snr_db} dB)')
+            plt.scatter(I, Q, c=symbol_colors[s], s=200, marker=symbol_markers[s], 
+                       edgecolors='black', linewidth=2, zorder=5)
+        
+        plt.xlabel('In-Phase (I)', fontsize=12, fontweight='bold')
+        plt.ylabel('Quadrature (Q)', fontsize=12, fontweight='bold')
+        plt.title(f'Received Constellation (SNR={snr_db} dB)', fontsize=14, fontweight='bold')
         plt.grid(True, alpha=0.3)
         plt.axis('equal')
         plt.axhline(y=0, color='k', linewidth=0.5)
         plt.axvline(x=0, color='k', linewidth=0.5)
-        plt.legend()
+        plt.legend(loc='upper right', framealpha=0.9, fontsize=10)
         
-        plt.suptitle('Stage 6: Constellation Comparison - Transmitted vs Received', fontsize=14, y=1.02)
-        plt.tight_layout()
+        plt.suptitle('Stage 6: Constellation Comparison - Transmitted vs Received', fontsize=16, fontweight='bold')
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
+        plt.savefig("Step-6-Tx-Vs-Rx-Constellation-Diagrams.png")
         plt.show()
 
 
@@ -357,12 +476,14 @@ for snr_db in snr:
 plt.figure(figsize=(10, 6))
 plt.plot(snr, BER_ofdm, 'o-', linewidth=2, markersize=8, label='Simulated BER')
 plt.yscale('log')
+plt.ylim([1e-6, 1])
 plt.xlabel('SNR (dB)', fontsize=12)
 plt.ylabel('Bit Error Rate (BER)', fontsize=12)
 plt.title('Stage 7: OFDM QPSK BER vs SNR Performance', fontsize=14)
 plt.grid(True, alpha=0.3, which='both')
 plt.legend(fontsize=11)
 plt.tight_layout()
+plt.savefig("Step-7-OFDM-BER-Just-Simulated.png")
 plt.show()
 
 # ================== PLOT 9: BER Performance with Theoretical Comparison ==================
@@ -372,10 +493,12 @@ plt.plot(snr, BER_ofdm, 'o-', linewidth=2, markersize=8, label='Simulated BER')
 # Pb = Q * sqrt(2*Eb/N0) = 0.5 * erfc(sqrt(Eb/N0))
 plt.plot(snr, 0.5 * erfc(np.sqrt(10**(np.array(snr)/10))), 'r--', linewidth=2, label='Theoretical BER (QPSK AWGN)')
 plt.yscale('log')
+plt.ylim([1e-6, 1])
 plt.xlabel('SNR (dB)', fontsize=12)
 plt.ylabel('Bit Error Rate (BER)', fontsize=12)
 plt.title('Stage 7: OFDM QPSK BER Performance - Simulated vs Theoretical', fontsize=14)
 plt.grid(True, alpha=0.3, which='both')
 plt.legend(fontsize=11)
 plt.tight_layout()
+plt.savefig("Step-7-OFDM-BER-Sim-Theoretical.png")
 plt.show()
