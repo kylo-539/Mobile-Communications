@@ -1,6 +1,5 @@
 import math
 import numpy as np
-from scipy.fftpack import fft
 from scipy.special import erfc
 import matplotlib.pyplot as plt
 # ================== OFDM SYSTEM PARAMETERS ==================
@@ -336,11 +335,12 @@ for snr_db in snr:
     # ================== STAGE 7: Demodulation & BER Calculation ==================
     # Demodulation (Symbol slicing)
     demod_symbols = []
-    for rx_symbol in received_active_subcarriers:
-        distances = [abs(rx_symbol - (constellation_I[s] + 1j * constellation_Q[s])) for s in range(4)]
-        demod_symbols.append(np.argmin(distances))
 
-    demod_symbols = np.array(demod_symbols)
+    # Broadcasting used to improve efficiency
+    const_points = np.array([constellation_I[s] + 1j*constellation_Q[s] for s in range(4)])
+
+    distances = abs(received_active_subcarriers[:,None] - const_points[None,:])
+    demod_symbols = np.argmin(distances, axis=1)
 
     # Convert symbols back to bits
     bit_pairs = {
