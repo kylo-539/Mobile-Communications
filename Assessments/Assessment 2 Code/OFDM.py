@@ -175,7 +175,7 @@ plt.savefig("Step-2-QPSK-Mapping.png")
 plt.show()
 
 # ================== STAGE 3: Serial to Parallel & Subcarrier Mapping ==================
-# Serial to Parallel (now guaranteed to work since we padded)
+# Serial to Parallel
 ofdm_symbols = qpsk_modulated.reshape(-1, active_subcarriers)  # Shape: (num_ofdm_symbols, 480)
 
 # Map to FFT bins with DC null and guard bands
